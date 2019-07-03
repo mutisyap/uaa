@@ -12,15 +12,21 @@
  *******************************************************************************/
 package org.cloudfoundry.identity.uaa.authentication;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 
 import org.cloudfoundry.identity.uaa.oauth.client.ClientConstants;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.codec.Base64;
 import org.springframework.security.oauth2.provider.ClientDetailsService;
 import org.springframework.security.oauth2.provider.ClientRegistrationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 
 import javax.servlet.FilterChain;
@@ -38,11 +44,15 @@ import java.io.IOException;
 public class ClientBasicAuthenticationFilter extends BasicAuthenticationFilter {
 
     protected ClientDetailsService clientDetailsService;
+    private AuthenticationManager authenticationManager;
+    private AuthenticationEntryPoint authenticationEntryPoint;
 
     public ClientBasicAuthenticationFilter(AuthenticationManager authenticationManager,
             AuthenticationEntryPoint authenticationEntryPoint) {
 
         super(authenticationManager, authenticationEntryPoint);
+        this.authenticationManager = authenticationManager;
+        this.authenticationEntryPoint = authenticationEntryPoint;
     }
 
     @Override
@@ -57,8 +67,10 @@ public class ClientBasicAuthenticationFilter extends BasicAuthenticationFilter {
             }
 
             String[] decodedHeader = extractAndDecodeHeader(header, request);
+            logger.info("XXXXXXXXXXXXXXXX");
+            logger.info(String.format("%d %s %s", decodedHeader.length, decodedHeader[0], decodedHeader[1]));
             //Validate against client lockout policy
-            String clientId = decodedHeader[0];
+            String clientId = java.net.URLDecoder.decode(decodedHeader[0], getCredentialsCharset(request));
 
             //Validate against client secret expiration in the zone configured client secret policy
             Timestamp lastModified = (Timestamp) clientDetailsService.loadClientByClientId(clientId).getAdditionalInformation().get(ClientConstants.LAST_MODIFIED);
@@ -69,7 +81,71 @@ public class ClientBasicAuthenticationFilter extends BasicAuthenticationFilter {
             logger.debug(e.getMessage());
         }
         //call parent class to authenticate
-        super.doFilterInternal(request, response, chain);
+        logger.info("PARENT START");
+        final boolean debug = this.logger.isDebugEnabled();
+
+        String header = request.getHeader("Authorization");
+
+        if (header == null || !header.toLowerCase().startsWith("basic ")) {
+            chain.doFilter(request, response);
+            return;
+        }
+
+        try {
+            String[] tokens = extractAndDecodeHeader(header, request);
+            assert tokens.length == 2;
+
+            String username = java.net.URLDecoder.decode(tokens[0], getCredentialsCharset(request));
+
+            if (debug) {
+                this.logger
+                        .debug("Basic Authentication Authorization header found for user '"
+                                + username + "'");
+            }
+
+//            if (authenticationIsRequired(username)) {
+                UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(
+                        username, java.net.URLDecoder.decode(tokens[1], getCredentialsCharset(request)));
+                authRequest.setDetails(
+                        new UaaAuthenticationDetailsSource().buildDetails(request));
+                Authentication authResult = this.authenticationManager
+                        .authenticate(authRequest);
+
+                if (debug) {
+                    this.logger.debug("Authentication success: " + authResult);
+                }
+
+                SecurityContextHolder.getContext().setAuthentication(authResult);
+
+//                this.rememberMeServices.loginSuccess(request, response, authResult);
+
+                onSuccessfulAuthentication(request, response, authResult);
+//            }
+
+        }
+        catch (AuthenticationException failed) {
+            SecurityContextHolder.clearContext();
+
+            if (debug) {
+                this.logger.debug("Authentication request for failed: " + failed);
+            }
+
+//            this.rememberMeServices.loginFail(request, response);
+
+            onUnsuccessfulAuthentication(request, response, failed);
+
+//            if (this.ignoreFailure) {
+//                chain.doFilter(request, response);
+//            }
+//            else {
+                this.authenticationEntryPoint.commence(request, response, failed);
+//            }
+
+            return;
+        }
+
+        chain.doFilter(request, response);
+        logger.info("PARENT FINISHED");
     }
 
     public ClientDetailsService getClientDetailsService() {
