@@ -57,6 +57,9 @@ public class RecognizeFailureDispatcherServlet extends GenericServlet {
         } catch (Exception e) {
             logger.error("Fatal error: Unable to start UAA application.", e);
             failed = true;
+            if ("exit".equals(getEnvironment().getProperty("uaa.freakoutStrategy"))) {
+                System.exit(2);
+            }
         }
     }
 
