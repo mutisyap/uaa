@@ -15,63 +15,78 @@
 
 package org.cloudfoundry.identity.uaa.web;
 
-import java.sql.SQLException;
-import javax.servlet.ServletConfig;
-import javax.servlet.http.HttpServletResponse;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.web.servlet.DispatcherServlet;
+import org.springframework.core.env.ConfigurableEnvironment;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import javax.servlet.ServletConfig;
+import java.sql.SQLException;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-public class RecognizeFailureDispatcherServletTest {
-//    private MockHttpServletRequest request;
-//    private RecognizeFailureDispatcherServlet servlet;
-//    private MockHttpServletResponse response;
-//    private DispatcherServlet delegate;
-//    private ServletConfig servletConfig;
-//
-//    @Before
-//    public void setup() {
-//        request = new MockHttpServletRequest();
-//        servlet = new RecognizeFailureDispatcherServlet();
-//        response = new MockHttpServletResponse();
-//        delegate = mock(DispatcherServlet.class);
-//        servletConfig = mock(ServletConfig.class);
-//    }
-//
-//    @Test
-//    public void service_when_failure() throws Exception {
-//        Mockito.doThrow(new RuntimeException("some app error", new SQLException("db error")))
-//                .when(delegate).init(any());
-//
-//        servlet.setDelegate(delegate);
-//        servlet.init(servletConfig);
-//        servlet.service(request, response);
-//        assertEquals(HttpServletResponse.SC_SERVICE_UNAVAILABLE, response.getStatus());
-//        verify(delegate, times(1)).init(any());
-//        verify(delegate, times(0)).service(any(), any());
-//        assertNotNull(response.getHeader(RecognizeFailureDispatcherServlet.HEADER));
-//        assertEquals(RecognizeFailureDispatcherServlet.HEADER_MSG, response.getHeader(RecognizeFailureDispatcherServlet.HEADER));
-//    }
-//
-//    @Test
-//    public void service_when_ok() throws Exception {
-//        DispatcherServlet delegate = mock(DispatcherServlet.class);
-//        Mockito.doNothing().when(delegate).init(any());
-//        servlet.setDelegate(delegate);
-//        servlet.init(servletConfig);
-//        servlet.service(request, response);
-//        verify(delegate, times(1)).init(any());
-//        verify(delegate, times(1)).service(any(), any());
-//    }
+class RecognizeFailureDispatcherServletTest {
+    private RecognizeFailureDispatcherServlet.ShutdownHelper shutdownHelper;
+    private RecognizeFailureDispatcherServlet servlet;
+    private ServletConfig servletConfig;
+    private ConfigurableEnvironment configurableEnvironment;
+
+    @BeforeEach
+    void setup() {
+        shutdownHelper = mock(RecognizeFailureDispatcherServlet.ShutdownHelper.class);
+        servlet = spy(new RecognizeFailureDispatcherServlet(shutdownHelper));
+        servletConfig = mock(ServletConfig.class);
+        configurableEnvironment = mock(ConfigurableEnvironment.class);
+    }
+
+    @Nested
+    class WhenInitThrows {
+        @BeforeEach
+        void setup() throws Exception {
+            Mockito.doThrow(new RuntimeException("some app error", new SQLException("db error")))
+                    .when(servlet)
+                    .delegateInitToSuper(any());
+        }
+
+        @Test
+        void callsTheShutdownHelperWithExitStrategy() throws Exception {
+            mockEnvironmentProperty("uaa.onInitializationFailure", "exit");
+            servlet.init(servletConfig);
+
+            verify(shutdownHelper, times(1)).shutdown();
+        }
+
+        @Test
+        void ignoresShutdownHelperWithoutExitStrategy() throws Exception {
+            mockEnvironmentProperty("uaa.onInitializationFailure", null);
+            servlet.init(servletConfig);
+
+            verify(shutdownHelper, times(0)).shutdown();
+        }
+
+        private void mockEnvironmentProperty(String property, String value) {
+            Mockito.doReturn(configurableEnvironment)
+                    .when(servlet)
+                    .getEnvironment();
+            Mockito.doReturn(value)
+                    .when(configurableEnvironment)
+                    .getProperty(property);
+        }
+    }
+
+    @Test
+    void doesNotCallTheShutdownHelperWhenInitializationSucceeds() throws Exception {
+        Mockito.doNothing()
+                .when(servlet)
+                .delegateInitToSuper(any());
+
+        servlet.init(servletConfig);
+        verify(shutdownHelper, times(0)).shutdown();
+    }
 }

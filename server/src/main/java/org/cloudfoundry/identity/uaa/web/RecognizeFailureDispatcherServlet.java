@@ -15,125 +15,42 @@
 
 package org.cloudfoundry.identity.uaa.web;
 
-import java.io.IOException;
-import java.util.Enumeration;
-import javax.servlet.GenericServlet;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletResponse;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.env.ConfigurableEnvironment;
-import org.springframework.core.env.Environment;
-import org.springframework.http.MediaType;
 import org.springframework.web.servlet.DispatcherServlet;
 
-public class RecognizeFailureDispatcherServlet extends GenericServlet {
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletException;
 
+public class RecognizeFailureDispatcherServlet extends DispatcherServlet {
     private static Logger logger = LoggerFactory.getLogger(RecognizeFailureDispatcherServlet.class);
     protected static final String HEADER = "X-Cf-Uaa-Error";
-    protected static final String HEADER_MSG = "Server failed to start. Possible configuration error.";
+    private final ShutdownHelper shutdownHelper;
 
-    private volatile boolean failed = false;
-    private DispatcherServlet delegate = new DispatcherServlet();
-
-    public void setDelegate(DispatcherServlet delegate) {
-        this.delegate = delegate;
-    }
-
-    public RecognizeFailureDispatcherServlet() {
+    public RecognizeFailureDispatcherServlet(ShutdownHelper shutdownHelper) {
         super();
+        this.shutdownHelper = shutdownHelper;
     }
-
 
     @Override
     public void init(ServletConfig config) {
         try {
-            delegate.init(config);
+            delegateInitToSuper(config);
         } catch (Exception e) {
             logger.error("Fatal error: Unable to start UAA application.", e);
-            failed = true;
-            if ("exit".equals(getEnvironment().getProperty("uaa.freakoutStrategy"))) {
-                System.exit(2);
+            if ("exit".equals(getEnvironment().getProperty("uaa.onInitializationFailure"))) {
+                shutdownHelper.shutdown();
             }
         }
     }
 
-    @Override
-    public void service(ServletRequest req, ServletResponse res) throws ServletException, IOException {
-        if (failed) {
-            String msg = "FAILURE";
-            HttpServletResponse response = (HttpServletResponse) res;
-            response.addHeader(HEADER, HEADER_MSG);
-            response.setContentType(MediaType.TEXT_PLAIN_VALUE);
-            response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-            response.getWriter().write(msg);
-            response.getWriter().flush();
-        } else {
-            delegate.service(req,res);
+    void delegateInitToSuper(ServletConfig config) throws ServletException {
+        super.init(config);
+    }
+
+    static class ShutdownHelper {
+        public void shutdown() {
+            System.exit(2);
         }
-    }
-
-    @Override
-    public void destroy() {
-        delegate.destroy();
-    }
-
-    public void setEnvironment(Environment environment) {
-        delegate.setEnvironment(environment);
-    }
-
-    public ConfigurableEnvironment getEnvironment() {
-        return delegate.getEnvironment();
-    }
-
-
-    @Override
-    public String getInitParameter(String name) {
-        return delegate.getInitParameter(name);
-    }
-
-    @Override
-    public Enumeration<String> getInitParameterNames() {
-        return delegate.getInitParameterNames();
-    }
-
-    @Override
-    public ServletConfig getServletConfig() {
-        return delegate.getServletConfig();
-    }
-
-    @Override
-    public ServletContext getServletContext() {
-        return delegate.getServletContext();
-    }
-
-    @Override
-    public String getServletInfo() {
-        return delegate.getServletInfo();
-    }
-
-    @Override
-    public void init() throws ServletException {
-        delegate.init();
-    }
-
-    @Override
-    public void log(String msg) {
-        delegate.log(msg);
-    }
-
-    @Override
-    public void log(String message, Throwable t) {
-        delegate.log(message, t);
-    }
-
-    @Override
-    public String getServletName() {
-        return delegate.getServletName();
     }
 }
