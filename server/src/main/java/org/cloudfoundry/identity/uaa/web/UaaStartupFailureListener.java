@@ -8,17 +8,19 @@ import org.apache.catalina.LifecycleListener;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Server;
 import org.apache.catalina.Service;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
-
-import static java.lang.String.*;
 
 public class UaaStartupFailureListener implements LifecycleListener {
 
-    public static final Logger LOGGER = LoggerFactory.getLogger(UaaStartupFailureListener.class);
+    private Predicate<Container> containerFailed = container -> {
+        if (container.getState() != LifecycleState.STARTED) {
+            return true;
+        }
+
+        return Stream.of(container.findChildren()).anyMatch(this.containerFailed);
+    };
 
     @Override
     public void lifecycleEvent(LifecycleEvent event) {
@@ -27,21 +29,14 @@ public class UaaStartupFailureListener implements LifecycleListener {
 
         if (lifecycle instanceof Server && eventType.equals(Lifecycle.AFTER_START_EVENT)) {
             Server server = (Server) lifecycle;
-            Consumer<Container> stopTomcat = container -> {
+
+            if (Stream.of(server.findServices()).map(Service::getContainer).anyMatch(containerFailed)) {
                 try {
-                    LOGGER.error(format("msg=\"initialization failure, stopping tomcat\" container=%s state=%s", container.getName(), container.getStateName()));
                     server.stop();
                     server.destroy();
                 } catch (LifecycleException e) {
-                    LOGGER.error(format("msg=\"failed to stop tomcat: %s\"", e.getMessage()), e);
                 }
-            };
-
-            Stream.of(server.findServices())
-                    .map(Service::getContainer)
-                    .filter(container -> container.getState() != LifecycleState.STARTED)
-                    .findFirst()
-                    .ifPresent(stopTomcat);
+            }
         }
     }
 }
