@@ -223,6 +223,19 @@ task integrationTest(dependsOn: subprojects.integrationTest) {
     finalizedBy cargoStopLocal
 }
 
+project(':cloudfoundry-identity-server') {
+    task tomcatListenerJar(type: Jar) {
+        archiveBaseName = 'tomcat-listener'
+        destinationDirectory = libsDir
+        from(sourceSets.main.output)
+        include "**/UaaStartupFailureListener.*"
+    }
+
+    artifacts {
+        archives tomcatListenerJar
+    }
+}
+
 // task dependencies
 assemble.dependsOn subprojects.assemble
 test.dependsOn subprojects.test
