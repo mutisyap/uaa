@@ -186,11 +186,10 @@ test {
     exclude '**/*IT.class'
     exclude '**/*Docs.class'
     systemProperty "mock.suite.test", "true"
-    filter {
-        includeTestsMatching "*NonSnarlIdpMetadataManagerTest*"
-        includeTestsMatching "org.cloudfoundry.identity.uaa.mock.saml.SamlAuthenticationMockMvcTests*"
-        includeTestsMatching "org.cloudfoundry.identity.uaa.login*LoginMockMvc*"
-    }
+//    filter {
+//        includeTestsMatching "*Zone*"
+//        includeTestsMatching "org.cloudfoundry.identity.uaa.mock.token*TokenMvcMock*"
+//    }
 }
 
 task populateVersionfile {
